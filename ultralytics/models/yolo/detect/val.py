@@ -105,19 +105,18 @@ class DetectionValidator(BaseValidator):
         return ("%22s" + "%11s" * 6) % ("Class", "Images", "Instances", "Box(P", "R", "mAP50", "mAP50-95)")
 
     def postprocess(self, preds: torch.Tensor) -> list[dict[str, torch.Tensor]]:
-        """Apply Non-maximum suppression to prediction outputs.
+        """Apply DACS instead of standard NMS."""
 
-        Args:
-            preds (torch.Tensor): Raw predictions from the model.
+        from ultralytics.nn.modules.dacs import DACS
+        import torch
 
-        Returns:
-            (list[dict[str, torch.Tensor]]): Processed predictions after NMS, where each dict contains 'bboxes', 'conf',
-                'cls', and 'extra' tensors.
-        """
+        # -------------------------------
+        # 🔹 STEP 1: Weak NMS (decode only)
+        # -------------------------------
         outputs = nms.non_max_suppression(
             preds,
             self.args.conf,
-            self.args.iou,
+            0.99,  # 🔥 IMPORTANT: disable real suppression
             nc=0 if self.args.task == "detect" else self.nc,
             multi_label=True,
             agnostic=self.args.single_cls or self.args.agnostic_nms,
@@ -125,7 +124,36 @@ class DetectionValidator(BaseValidator):
             end2end=self.end2end,
             rotated=self.args.task == "obb",
         )
-        return [{"bboxes": x[:, :4], "conf": x[:, 4], "cls": x[:, 5], "extra": x[:, 6:]} for x in outputs]
+
+        # -------------------------------
+        # 🔥 STEP 2: Apply DACS
+        # -------------------------------
+        device = outputs[0].device if len(outputs) else "cpu"
+        dacs = DACS(topk=100).to(device)
+
+        new_outputs = []
+
+        for x in outputs:
+
+            if x is None or len(x) == 0:
+                new_outputs.append({"bboxes": torch.empty((0, 4)), "conf": torch.empty(0), "cls": torch.empty(0), "extra": torch.empty((0, 0))})
+                continue
+
+            boxes = x[:, :4]
+            scores = x[:, 4]
+            classes = x[:, 5]
+
+            # 🔥 Apply DACS++
+            boxes, scores, classes = dacs(boxes, scores, classes)
+
+            new_outputs.append({
+                "bboxes": boxes,
+                "conf": scores,
+                "cls": classes,
+                "extra": torch.empty((len(boxes), 0), device=boxes.device)
+            })
+
+        return new_outputs
 
     def _prepare_batch(self, si: int, batch: dict[str, Any]) -> dict[str, Any]:
         """Prepare a batch of images and annotations for validation.

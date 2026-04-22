@@ -101,7 +101,13 @@ class DACS(nn.Module):
         # ---------------------------
         # 🔹 Energy-based suppression
         # ---------------------------
-        S = torch.sum(s_ij * iou, dim=1)
+        # 🔥 only consider stronger neighbors
+        score_j = scores.unsqueeze(0).expand(N, N)
+        score_i = scores.unsqueeze(1).expand(N, N)
+
+        mask = (score_j > score_i).float()
+
+        S = torch.sum(s_ij * iou * mask, dim=1)
         E = lambda_i * S * D
 
         # 🔥 smooth score update (core idea)

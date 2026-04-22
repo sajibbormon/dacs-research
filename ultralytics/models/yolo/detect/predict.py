@@ -12,29 +12,29 @@ class DetectionPredictor(BasePredictor):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        # 🔥 IMPORTANT: initialize mode
         self.dacs_mode = "nms"   # default
 
     def postprocess(self, preds, img, orig_imgs, **kwargs):
-        """Post-process predictions with DACS integration."""
+        """Post-process predictions with DACS++ integration."""
 
-        print("🔥 CUSTOM PREDICTOR ACTIVE")  # debug
+        print("🔥 CUSTOM PREDICTOR ACTIVE")
 
         save_feats = getattr(self, "_feats", None) is not None
 
-        # 🔹 Mode control
         mode = self.dacs_mode
         print("MODE:", mode)
 
         # -------------------------------
-        # 🔹 NMS (baseline or weak)
+        # 🔹 STEP 1: Decode predictions
         # -------------------------------
         if mode == "nms":
             iou_thr = self.args.iou
 
-        elif mode in ["weak_nms", "dacs"]:
-            iou_thr = 0.95  # weaken NMS
+        elif mode == "weak_nms":
+            iou_thr = 0.95
+
+        elif mode == "dacs":
+            iou_thr = 0.99  # 🔥 almost no suppression (decode only)
 
         else:
             raise ValueError(f"Unknown mode: {mode}")
@@ -66,11 +66,11 @@ class DetectionPredictor(BasePredictor):
             preds = preds[0]
 
         # -------------------------------
-        # 🔥 Apply DACS
+        # 🔥 STEP 2: Apply DACS++
         # -------------------------------
         if mode == "dacs":
 
-            print("🔥 DACS EXECUTING")  # debug
+            print("🔥 DACS++ EXECUTING")
 
             device = preds[0].device if len(preds) else "cpu"
             dacs = DACS(topk=100).to(device)
@@ -78,6 +78,7 @@ class DetectionPredictor(BasePredictor):
             new_preds = []
 
             for pred in preds:
+
                 if pred is None or len(pred) == 0:
                     new_preds.append(pred)
                     continue
@@ -86,19 +87,21 @@ class DetectionPredictor(BasePredictor):
                 scores = pred[:, 4]
                 classes = pred[:, 5]
 
-                # DEBUG check
-                print("Before scores:", scores[:3])
+                # 🔹 DEBUG
+                print("Before:", scores[:3])
 
+                # 🔥 Apply DACS++
                 boxes, scores, classes = dacs(boxes, scores, classes)
 
-                print("After scores:", scores[:3])
+                print("After:", scores[:3])
 
-                keep = scores > self.args.conf
+                # 🔥 IMPORTANT: NO threshold filtering
+                # (selection already handled inside DACS)
 
                 pred = torch.cat([
-                    boxes[keep],
-                    scores[keep].unsqueeze(1),
-                    classes[keep].unsqueeze(1)
+                    boxes,
+                    scores.unsqueeze(1),
+                    classes.unsqueeze(1)
                 ], dim=1)
 
                 new_preds.append(pred)

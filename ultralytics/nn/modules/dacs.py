@@ -33,7 +33,7 @@ class DACS(nn.Module):
             nn.Sigmoid()
         )
 
-        # 🔹 adaptive lambda
+        # 🔹 adaptive lambda (stronger now)
         self.lambda_net = nn.Sequential(
             nn.Linear(5, 16),
             nn.ReLU(),
@@ -63,12 +63,7 @@ class DACS(nn.Module):
         iou.fill_diagonal_(0)
 
         # ---------------------------
-        # 🔹 Step 3: Density
-        # ---------------------------
-        D = iou.mean(dim=1)
-
-        # ---------------------------
-        # 🔹 Step 4: Pairwise features
+        # 🔹 Step 3: Pairwise features
         # ---------------------------
         xi, yi, x2i, y2i = boxes.T
         xi, yi, x2i, y2i = xi.unsqueeze(1), yi.unsqueeze(1), x2i.unsqueeze(1), y2i.unsqueeze(1)
@@ -92,29 +87,32 @@ class DACS(nn.Module):
         s_ij = s_ij * class_mask
 
         # ---------------------------
-        # 🔹 Lambda
+        # 🔹 Lambda (strengthened)
         # ---------------------------
-        lambda_i = self.lambda_net(
+        lambda_i = 1.0 + self.lambda_net(
             torch.cat([boxes, scores.unsqueeze(1)], dim=1)
         ).squeeze()
 
+        # =========================================================
+        # 🔥 STEP 4: SOFT LOCAL COMPETITION (KEY IMPROVEMENT)
+        # =========================================================
+
+        # competition weights
+        weights = torch.softmax(s_ij * iou, dim=1)
+
+        # suppression strength
+        S = torch.sum(weights * iou, dim=1)
+
+        # energy
+        E = lambda_i * S
+
         # ---------------------------
-        # 🔹 Energy-based suppression
+        # 🔹 Smooth score update
         # ---------------------------
-        # 🔥 only consider stronger neighbors
-        score_j = scores.unsqueeze(0).expand(N, N)
-        score_i = scores.unsqueeze(1).expand(N, N)
-
-        mask = (score_j > score_i).float()
-
-        S = torch.sum(s_ij * iou * mask, dim=1)
-        E = lambda_i * S * D
-
-        # 🔥 smooth score update (core idea)
         new_scores = scores * torch.exp(-E)
 
         # =========================================================
-        # 🔥 FINAL STEP: GLOBAL RANKING ONLY (NO HARD RULES)
+        # 🔥 FINAL: GLOBAL RANKING
         # =========================================================
         k_final = min(50, len(new_scores))
         idx = torch.topk(new_scores, k_final).indices

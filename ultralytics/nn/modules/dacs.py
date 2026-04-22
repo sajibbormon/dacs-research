@@ -109,7 +109,18 @@ class DACS(nn.Module):
         # ---------------------------
         # 🔥 Step 5: GLOBAL SELECTION (CRITICAL)
         # ---------------------------
-        k_final = min(50, len(new_scores))
-        final_idx = torch.topk(new_scores, k_final).indices
+        # after new_scores
 
-        return boxes[final_idx], new_scores[final_idx], classes[final_idx]
+        # 🔥 adaptive filtering
+        threshold = new_scores.mean() * 0.8
+        keep = new_scores > threshold
+
+        boxes = boxes[keep]
+        scores = new_scores[keep]
+        classes = classes[keep]
+
+        # 🔥 final selection
+        k_final = min(50, len(scores))
+        idx = torch.topk(scores, k_final).indices
+
+        return boxes[idx], scores[idx], classes[idx]

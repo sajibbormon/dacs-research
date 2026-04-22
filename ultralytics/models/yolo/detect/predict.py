@@ -9,14 +9,23 @@ import torch
 
 
 class DetectionPredictor(BasePredictor):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # 🔥 IMPORTANT: initialize mode
+        self.dacs_mode = "nms"   # default
+
     def postprocess(self, preds, img, orig_imgs, **kwargs):
-        """Post-process predictions with research-grade DACS integration."""
+        """Post-process predictions with DACS integration."""
+
+        print("🔥 CUSTOM PREDICTOR ACTIVE")  # debug
 
         save_feats = getattr(self, "_feats", None) is not None
 
-        # 🔹 Mode control (VERY IMPORTANT)
-        mode = getattr(self, "dacs_mode", "nms")  
-        # options: "nms", "weak_nms", "dacs"
+        # 🔹 Mode control
+        mode = self.dacs_mode
+        print("MODE:", mode)
 
         # -------------------------------
         # 🔹 NMS (baseline or weak)
@@ -25,7 +34,7 @@ class DetectionPredictor(BasePredictor):
             iou_thr = self.args.iou
 
         elif mode in ["weak_nms", "dacs"]:
-            iou_thr = 0.95   # 🔥 weaken suppression
+            iou_thr = 0.95  # weaken NMS
 
         else:
             raise ValueError(f"Unknown mode: {mode}")
@@ -36,7 +45,7 @@ class DetectionPredictor(BasePredictor):
             iou_thr,
             self.args.classes,
             self.args.agnostic_nms,
-            max_det=300,  # 🔥 allow more boxes
+            max_det=300,
             nc=0 if self.args.task == "detect" else len(self.model.names),
             end2end=getattr(self.model, "end2end", False),
             rotated=self.args.task == "obb",
@@ -44,23 +53,27 @@ class DetectionPredictor(BasePredictor):
         )
 
         # -------------------------------
-        # 🔹 Convert images
+        # Convert images
         # -------------------------------
         if not isinstance(orig_imgs, list):
             orig_imgs = ops.convert_torch2numpy_batch(orig_imgs)[..., ::-1]
 
         # -------------------------------
-        # 🔹 Feature extraction
+        # Feature extraction
         # -------------------------------
         if save_feats:
             obj_feats = self.get_obj_feats(self._feats, preds[1])
             preds = preds[0]
 
         # -------------------------------
-        # 🔥 Apply DACS (only in DACS mode)
+        # 🔥 Apply DACS
         # -------------------------------
         if mode == "dacs":
-            dacs = DACS(topk=100).to(preds[0].device if len(preds) else "cpu")
+
+            print("🔥 DACS EXECUTING")  # debug
+
+            device = preds[0].device if len(preds) else "cpu"
+            dacs = DACS(topk=100).to(device)
 
             new_preds = []
 
@@ -73,15 +86,13 @@ class DetectionPredictor(BasePredictor):
                 scores = pred[:, 4]
                 classes = pred[:, 5]
 
-                # 🔹 DEBUG (optional)
-                # print("Before:", scores[:5])
+                # DEBUG check
+                print("Before scores:", scores[:3])
 
                 boxes, scores, classes = dacs(boxes, scores, classes)
 
-                # 🔹 DEBUG (optional)
-                # print("After:", scores[:5])
+                print("After scores:", scores[:3])
 
-                # 🔹 Filtering
                 keep = scores > self.args.conf
 
                 pred = torch.cat([
@@ -95,7 +106,7 @@ class DetectionPredictor(BasePredictor):
             preds = new_preds
 
         # -------------------------------
-        # 🔹 Build results
+        # Build results
         # -------------------------------
         results = self.construct_results(preds, img, orig_imgs, **kwargs)
 
@@ -104,9 +115,9 @@ class DetectionPredictor(BasePredictor):
                 r.feats = f
 
         return results
+
     @staticmethod
     def get_obj_feats(feat_maps, idxs):
-        """Extract object features from feature maps."""
         import torch
 
         s = min(x.shape[1] for x in feat_maps)

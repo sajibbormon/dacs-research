@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 def box_iou(box1, box2):
     area1 = box1[:, 2] * box1[:, 3]
     area2 = box2[:, 2] * box2[:, 3]
@@ -22,20 +23,10 @@ class DACS(nn.Module):
         self.topk = topk
 
         self.suppressor = nn.Sequential(
-            nn.Linear(7, 32),
-            nn.ReLU(),
-            nn.Linear(32, 16),
-            nn.ReLU(),
-            nn.Linear(16, 1),
-            nn.Sigmoid()
+            nn.Linear(7, 32), nn.ReLU(), nn.Linear(32, 16), nn.ReLU(), nn.Linear(16, 1), nn.Sigmoid()
         )
 
-        self.lambda_net = nn.Sequential(
-            nn.Linear(5, 16),
-            nn.ReLU(),
-            nn.Linear(16, 1),
-            nn.Sigmoid()
-        )
+        self.lambda_net = nn.Sequential(nn.Linear(5, 16), nn.ReLU(), nn.Linear(16, 1), nn.Sigmoid())
 
     def forward(self, boxes, scores, classes):
 
@@ -55,15 +46,18 @@ class DACS(nn.Module):
         xi, yi, wi, hi = boxes.T
         xi, yi, wi, hi = xi.unsqueeze(1), yi.unsqueeze(1), wi.unsqueeze(1), hi.unsqueeze(1)
 
-        features = torch.stack([
-            iou,
-            torch.abs(xi - xi.T),
-            torch.abs(yi - yi.T),
-            torch.abs(wi - wi.T),
-            torch.abs(hi - hi.T),
-            scores.unsqueeze(1).expand(N, N),
-            scores.unsqueeze(0).expand(N, N)
-        ], dim=-1).view(-1, 7)
+        features = torch.stack(
+            [
+                iou,
+                torch.abs(xi - xi.T),
+                torch.abs(yi - yi.T),
+                torch.abs(wi - wi.T),
+                torch.abs(hi - hi.T),
+                scores.unsqueeze(1).expand(N, N),
+                scores.unsqueeze(0).expand(N, N),
+            ],
+            dim=-1,
+        ).view(-1, 7)
 
         s_ij = self.suppressor(features).view(N, N)
 
@@ -72,9 +66,7 @@ class DACS(nn.Module):
         s_ij = s_ij * class_mask
 
         # Lambda
-        lambda_i = self.lambda_net(
-            torch.cat([boxes, scores.unsqueeze(1)], dim=1)
-        ).squeeze()
+        lambda_i = self.lambda_net(torch.cat([boxes, scores.unsqueeze(1)], dim=1)).squeeze()
 
         # Energy
         S = torch.sum(s_ij * iou, dim=1)

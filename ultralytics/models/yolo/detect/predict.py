@@ -1,17 +1,16 @@
 # Ultralytics 🚀 AGPL-3.0 License
 
+import torch
+
 from ultralytics.engine.predictor import BasePredictor
 from ultralytics.engine.results import Results
-from ultralytics.utils import nms, ops
 from ultralytics.nn.modules.dacs import DACS
-
-import torch
+from ultralytics.utils import nms, ops
 
 
 class DetectionPredictor(BasePredictor):
     def postprocess(self, preds, img, orig_imgs, **kwargs):
         """Post-process predictions with optional DACS."""
-
         save_feats = getattr(self, "_feats", None) is not None
 
         # 🔹 Check if DACS is enabled
@@ -60,11 +59,7 @@ class DetectionPredictor(BasePredictor):
                 # Filter low scores
                 keep = scores > self.args.conf
 
-                pred = torch.cat([
-                    boxes[keep],
-                    scores[keep].unsqueeze(1),
-                    classes[keep].unsqueeze(1)
-                ], dim=1)
+                pred = torch.cat([boxes[keep], scores[keep].unsqueeze(1), classes[keep].unsqueeze(1)], dim=1)
 
                 new_preds.append(pred)
 
@@ -86,12 +81,7 @@ class DetectionPredictor(BasePredictor):
 
         s = min(x.shape[1] for x in feat_maps)
         obj_feats = torch.cat(
-            [
-                x.permute(0, 2, 3, 1)
-                .reshape(x.shape[0], -1, s, x.shape[1] // s)
-                .mean(dim=-1)
-                for x in feat_maps
-            ],
+            [x.permute(0, 2, 3, 1).reshape(x.shape[0], -1, s, x.shape[1] // s).mean(dim=-1) for x in feat_maps],
             dim=1,
         )
         return [feats[idx] if idx.shape[0] else [] for feats, idx in zip(obj_feats, idxs)]

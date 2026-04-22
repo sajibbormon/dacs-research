@@ -23,6 +23,7 @@ class DACS(nn.Module):
         super().__init__()
         self.topk = topk
 
+        # 🔹 pairwise suppressor
         self.suppressor = nn.Sequential(
             nn.Linear(7, 32),
             nn.ReLU(),
@@ -32,6 +33,7 @@ class DACS(nn.Module):
             nn.Sigmoid()
         )
 
+        # 🔹 adaptive lambda
         self.lambda_net = nn.Sequential(
             nn.Linear(5, 16),
             nn.ReLU(),
@@ -97,61 +99,18 @@ class DACS(nn.Module):
         ).squeeze()
 
         # ---------------------------
-        # 🔹 Energy
+        # 🔹 Energy-based suppression
         # ---------------------------
         S = torch.sum(s_ij * iou, dim=1)
         E = lambda_i * S * D
 
-        # ---------------------------
-        # 🔹 New scores
-        # ---------------------------
+        # 🔥 smooth score update (core idea)
         new_scores = scores * torch.exp(-E)
 
         # =========================================================
-        # 🔥 STEP 5: HARD SUPPRESSION (CRITICAL - NEW)
+        # 🔥 FINAL STEP: GLOBAL RANKING ONLY (NO HARD RULES)
         # =========================================================
-        keep = torch.ones(len(boxes), dtype=torch.bool, device=boxes.device)
+        k_final = min(50, len(new_scores))
+        idx = torch.topk(new_scores, k_final).indices
 
-        for i in range(len(boxes)):
-            if not keep[i]:
-                continue
-            for j in range(i + 1, len(boxes)):
-                if not keep[j]:
-                    continue
-
-                if classes[i] == classes[j]:
-                    if iou[i, j] > 0.5:
-
-                        if new_scores[i] >= new_scores[j]:
-                            keep[j] = False
-                        else:
-                            keep[i] = False
-                            break
-
-        boxes = boxes[keep]
-        scores = new_scores[keep]
-        classes = classes[keep]
-
-        # =========================================================
-        # 🔥 STEP 6: Adaptive filtering
-        # =========================================================
-        if len(scores) == 0:
-            return boxes, scores, classes
-
-        threshold = scores.mean() * 0.8
-        keep = scores > threshold
-
-        boxes = boxes[keep]
-        scores = scores[keep]
-        classes = classes[keep]
-
-        # =========================================================
-        # 🔥 STEP 7: Final selection
-        # =========================================================
-        if len(scores) == 0:
-            return boxes, scores, classes
-
-        k_final = min(50, len(scores))
-        idx = torch.topk(scores, k_final).indices
-
-        return boxes[idx], scores[idx], classes[idx]
+        return boxes[idx], new_scores[idx], classes[idx]

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 def box_iou(box1, box2):
     # box format: x1, y1, x2, y2
 
@@ -106,20 +107,50 @@ class DACS(nn.Module):
         # ---------------------------
         new_scores = scores * torch.exp(-E)
 
-        # ---------------------------
-        # 🔥 Step 5: GLOBAL SELECTION (CRITICAL)
-        # ---------------------------
-        # after new_scores
+        # =========================================================
+        # 🔥 STEP 5: HARD SUPPRESSION (CRITICAL - NEW)
+        # =========================================================
+        keep = torch.ones(len(boxes), dtype=torch.bool, device=boxes.device)
 
-        # 🔥 adaptive filtering
-        threshold = new_scores.mean() * 0.8
-        keep = new_scores > threshold
+        for i in range(len(boxes)):
+            if not keep[i]:
+                continue
+            for j in range(i + 1, len(boxes)):
+                if not keep[j]:
+                    continue
+
+                if classes[i] == classes[j]:
+                    if iou[i, j] > 0.5:
+
+                        if new_scores[i] >= new_scores[j]:
+                            keep[j] = False
+                        else:
+                            keep[i] = False
+                            break
 
         boxes = boxes[keep]
         scores = new_scores[keep]
         classes = classes[keep]
 
-        # 🔥 final selection
+        # =========================================================
+        # 🔥 STEP 6: Adaptive filtering
+        # =========================================================
+        if len(scores) == 0:
+            return boxes, scores, classes
+
+        threshold = scores.mean() * 0.8
+        keep = scores > threshold
+
+        boxes = boxes[keep]
+        scores = scores[keep]
+        classes = classes[keep]
+
+        # =========================================================
+        # 🔥 STEP 7: Final selection
+        # =========================================================
+        if len(scores) == 0:
+            return boxes, scores, classes
+
         k_final = min(50, len(scores))
         idx = torch.topk(scores, k_final).indices
 

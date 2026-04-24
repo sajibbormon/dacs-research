@@ -106,9 +106,9 @@ class DetectionValidator(BaseValidator):
 
     def postprocess(self, preds: torch.Tensor) -> list[dict[str, torch.Tensor]]:
         """Apply DACS instead of standard NMS."""
+        import torch
 
         from ultralytics.nn.modules.dacs import DACS
-        import torch
 
         # -------------------------------
         # 🔹 STEP 1: Weak NMS (decode only)
@@ -134,9 +134,15 @@ class DetectionValidator(BaseValidator):
         new_outputs = []
 
         for x in outputs:
-
             if x is None or len(x) == 0:
-                new_outputs.append({"bboxes": torch.empty((0, 4)), "conf": torch.empty(0), "cls": torch.empty(0), "extra": torch.empty((0, 0))})
+                new_outputs.append(
+                    {
+                        "bboxes": torch.empty((0, 4)),
+                        "conf": torch.empty(0),
+                        "cls": torch.empty(0),
+                        "extra": torch.empty((0, 0)),
+                    }
+                )
                 continue
 
             boxes = x[:, :4]
@@ -146,12 +152,14 @@ class DetectionValidator(BaseValidator):
             # 🔥 Apply DACS++
             boxes, scores, classes = dacs(boxes, scores, classes)
 
-            new_outputs.append({
-                "bboxes": boxes,
-                "conf": scores,
-                "cls": classes,
-                "extra": torch.empty((len(boxes), 0), device=boxes.device)
-            })
+            new_outputs.append(
+                {
+                    "bboxes": boxes,
+                    "conf": scores,
+                    "cls": classes,
+                    "extra": torch.empty((len(boxes), 0), device=boxes.device),
+                }
+            )
 
         return new_outputs
 

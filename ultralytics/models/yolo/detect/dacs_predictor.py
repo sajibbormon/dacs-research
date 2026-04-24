@@ -1,5 +1,6 @@
 from ultralytics.models.yolo.detect.predict import DetectionPredictor
 
+
 class DACSPredictor(DetectionPredictor):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

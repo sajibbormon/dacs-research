@@ -1,22 +1,20 @@
 # Ultralytics 🚀 AGPL-3.0 License
 
+import torch
+
 from ultralytics.engine.predictor import BasePredictor
 from ultralytics.engine.results import Results
-from ultralytics.utils import nms, ops
 from ultralytics.nn.modules.dacs import DACS
-
-import torch
+from ultralytics.utils import nms, ops
 
 
 class DetectionPredictor(BasePredictor):
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.dacs_mode = "nms"   # default
+        self.dacs_mode = "nms"  # default
 
     def postprocess(self, preds, img, orig_imgs, **kwargs):
         """Post-process predictions with DACS++ integration."""
-
         print("🔥 CUSTOM PREDICTOR ACTIVE")
 
         save_feats = getattr(self, "_feats", None) is not None
@@ -69,7 +67,6 @@ class DetectionPredictor(BasePredictor):
         # 🔥 STEP 2: Apply DACS++
         # -------------------------------
         if mode == "dacs":
-
             print("🔥 DACS++ EXECUTING")
 
             device = preds[0].device if len(preds) else "cpu"
@@ -78,7 +75,6 @@ class DetectionPredictor(BasePredictor):
             new_preds = []
 
             for pred in preds:
-
                 if pred is None or len(pred) == 0:
                     new_preds.append(pred)
                     continue
@@ -98,11 +94,7 @@ class DetectionPredictor(BasePredictor):
                 # 🔥 IMPORTANT: NO threshold filtering
                 # (selection already handled inside DACS)
 
-                pred = torch.cat([
-                    boxes,
-                    scores.unsqueeze(1),
-                    classes.unsqueeze(1)
-                ], dim=1)
+                pred = torch.cat([boxes, scores.unsqueeze(1), classes.unsqueeze(1)], dim=1)
 
                 new_preds.append(pred)
 
@@ -125,12 +117,7 @@ class DetectionPredictor(BasePredictor):
 
         s = min(x.shape[1] for x in feat_maps)
         obj_feats = torch.cat(
-            [
-                x.permute(0, 2, 3, 1)
-                .reshape(x.shape[0], -1, s, x.shape[1] // s)
-                .mean(dim=-1)
-                for x in feat_maps
-            ],
+            [x.permute(0, 2, 3, 1).reshape(x.shape[0], -1, s, x.shape[1] // s).mean(dim=-1) for x in feat_maps],
             dim=1,
         )
         return [feats[idx] if idx.shape[0] else [] for feats, idx in zip(obj_feats, idxs)]

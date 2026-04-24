@@ -25,21 +25,11 @@ class DACS(nn.Module):
 
         # 🔹 pairwise suppressor
         self.suppressor = nn.Sequential(
-            nn.Linear(7, 32),
-            nn.ReLU(),
-            nn.Linear(32, 16),
-            nn.ReLU(),
-            nn.Linear(16, 1),
-            nn.Sigmoid()
+            nn.Linear(7, 32), nn.ReLU(), nn.Linear(32, 16), nn.ReLU(), nn.Linear(16, 1), nn.Sigmoid()
         )
 
         # 🔹 adaptive lambda (stronger now)
-        self.lambda_net = nn.Sequential(
-            nn.Linear(5, 16),
-            nn.ReLU(),
-            nn.Linear(16, 1),
-            nn.Sigmoid()
-        )
+        self.lambda_net = nn.Sequential(nn.Linear(5, 16), nn.ReLU(), nn.Linear(16, 1), nn.Sigmoid())
 
     def forward(self, boxes, scores, classes):
 
@@ -68,15 +58,18 @@ class DACS(nn.Module):
         xi, yi, x2i, y2i = boxes.T
         xi, yi, x2i, y2i = xi.unsqueeze(1), yi.unsqueeze(1), x2i.unsqueeze(1), y2i.unsqueeze(1)
 
-        features = torch.stack([
-            iou,
-            torch.abs(xi - xi.T),
-            torch.abs(yi - yi.T),
-            torch.abs(x2i - x2i.T),
-            torch.abs(y2i - y2i.T),
-            scores.unsqueeze(1).expand(N, N),
-            scores.unsqueeze(0).expand(N, N)
-        ], dim=-1).view(-1, 7)
+        features = torch.stack(
+            [
+                iou,
+                torch.abs(xi - xi.T),
+                torch.abs(yi - yi.T),
+                torch.abs(x2i - x2i.T),
+                torch.abs(y2i - y2i.T),
+                scores.unsqueeze(1).expand(N, N),
+                scores.unsqueeze(0).expand(N, N),
+            ],
+            dim=-1,
+        ).view(-1, 7)
 
         s_ij = self.suppressor(features).view(N, N)
 
@@ -89,9 +82,7 @@ class DACS(nn.Module):
         # ---------------------------
         # 🔹 Lambda (strengthened)
         # ---------------------------
-        lambda_i = 1.0 + self.lambda_net(
-            torch.cat([boxes, scores.unsqueeze(1)], dim=1)
-        ).squeeze()
+        lambda_i = 1.0 + self.lambda_net(torch.cat([boxes, scores.unsqueeze(1)], dim=1)).squeeze()
 
         # =========================================================
         # 🔥 STEP 4: SOFT LOCAL COMPETITION (KEY IMPROVEMENT)
